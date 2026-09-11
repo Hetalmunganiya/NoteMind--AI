@@ -9,8 +9,8 @@ and Interactive Quizzes.
 import time
 from datetime import datetime, timedelta
 import streamlit as st
+import streamlit.components.v1 as components
 import requests
-import extra_streamlit_components as stx
 
 # Backend API Base URL
 API_URL = "https://notemind-backend-7vl9.onrender.com"
@@ -58,9 +58,6 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# Initialize Cookie Manager
-cookie_manager = stx.CookieManager()
-
 # Initialize persistent session state variables
 if "token" not in st.session_state:
     st.session_state.token = None
@@ -77,17 +74,39 @@ if "quiz_data" not in st.session_state:
 if "quiz_submitted" not in st.session_state:
     st.session_state.quiz_submitted = False
 
-# Auto-restore session from cookies on refresh
-all_cookies = cookie_manager.get_all()
+# Step A: Restore from URL query parameters
+params = st.query_params
+if not st.session_state.token and "token" in params:
+    tok = params.get("token")
+    if tok and str(tok).strip() and tok != "None":
+        st.session_state.token = str(tok).strip()
+        st.session_state.user_email = params.get("email", "")
+        if "sid" in params:
+            st.session_state.session_id = params.get("sid")
+        if "fn" in params:
+            st.session_state.uploaded_filename = params.get("fn")
 
-if not st.session_state.token and all_cookies:
-    saved_tok = all_cookies.get("notemind_token")
-    if saved_tok and str(saved_tok).strip() and saved_tok != "None":
-        st.session_state.token = str(saved_tok).strip()
-        st.session_state.user_email = all_cookies.get("notemind_email", "")
-        st.session_state.session_id = all_cookies.get("notemind_session_id")
-        st.session_state.uploaded_filename = all_cookies.get("notemind_filename")
-        st.rerun()
+# Step B: Agar session_state khali hai toh browser ke localStorage se restore karein
+if not st.session_state.token:
+    components.html("""
+        <script>
+        const token = localStorage.getItem("notemind_token");
+        const email = localStorage.getItem("notemind_email");
+        const sid = localStorage.getItem("notemind_sid");
+        const fn = localStorage.getItem("notemind_fn");
+        
+        if (token && token !== "null" && token !== "") {
+            const url = new URL(window.parent.location.href);
+            if (!url.searchParams.get("token")) {
+                url.searchParams.set("token", token);
+                if (email) url.searchParams.set("email", email);
+                if (sid) url.searchParams.set("sid", sid);
+                if (fn) url.searchParams.set("fn", fn);
+                window.parent.location.href = url.href;
+            }
+        }
+        </script>
+    """, height=0, width=0)
 
 
 def get_auth_headers():
@@ -131,13 +150,20 @@ with st.sidebar:
                                 st.session_state.token = access_token
                                 st.session_state.user_email = email
 
-                                # Save in cookies with 7-day expiration
-                                expire_time = datetime.now() + timedelta(days=7)
-                                cookie_manager.set("notemind_token", access_token, expires_at=expire_time, key="set_tok")
-                                cookie_manager.set("notemind_email", email, expires_at=expire_time, key="set_em")
+                                # URL parameters update
+                                st.query_params["token"] = access_token
+                                st.query_params["email"] = email
+
+                                # Browser permanent storage mein save karein
+                                components.html(f"""
+                                    <script>
+                                    localStorage.setItem("notemind_token", "{access_token}");
+                                    localStorage.setItem("notemind_email", "{email}");
+                                    </script>
+                                """, height=0, width=0)
 
                                 st.success("Logged in successfully!")
-                                time.sleep(0.5)
+                                time.sleep(0.3)
                                 st.rerun()
                             else:
                                 try:
@@ -183,13 +209,22 @@ with st.sidebar:
         st.success(f"👤 Logged in as:\n**{st.session_state.user_email}**")
 
         if st.button("🚪 Logout", use_container_width=True):
-            cookie_manager.delete("notemind_token", key="del_tok")
-            cookie_manager.delete("notemind_email", key="del_em")
-            cookie_manager.delete("notemind_session_id", key="del_sid")
-            cookie_manager.delete("notemind_filename", key="del_fn")
+            # Storage aur session completely clear karein
+            components.html("""
+                <script>
+                localStorage.removeItem("notemind_token");
+                localStorage.removeItem("notemind_email");
+                localStorage.removeItem("notemind_sid");
+                localStorage.removeItem("notemind_fn");
+                const url = new URL(window.parent.location.href);
+                url.search = "";
+                window.parent.location.href = url.href;
+                </script>
+            """, height=0, width=0)
 
+            st.query_params.clear()
             st.session_state.clear()
-            time.sleep(0.5)
+            time.sleep(0.3)
             st.rerun()
 
         st.markdown("---")
@@ -247,9 +282,15 @@ if navigation == "📖 Study Room":
                         st.session_state.quiz_data = []
                         st.session_state.quiz_submitted = False
 
-                        expire_time = datetime.now() + timedelta(days=7)
-                        cookie_manager.set("notemind_session_id", str(data["session_id"]), expires_at=expire_time, key="set_sid")
-                        cookie_manager.set("notemind_filename", data["filename"], expires_at=expire_time, key="set_fn")
+                        # Active document ko session aur browser storage mein retain karein
+                        st.query_params["sid"] = str(data["session_id"])
+                        st.query_params["fn"] = data["filename"]
+                        components.html(f"""
+                            <script>
+                            localStorage.setItem("notemind_sid", "{data['session_id']}");
+                            localStorage.setItem("notemind_fn", "{data['filename']}");
+                            </script>
+                        """, height=0, width=0)
 
                         st.success(f"✅ **{data['filename']}** processed successfully!")
                     else:
