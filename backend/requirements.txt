@@ -1,0 +1,32 @@
+# FastAPI & ASGI Server
+fastapi
+uvicorn[standard]
+
+# Validation & Settings
+pydantic
+pydantic-settings
+python-dotenv
+
+# Database & ORM
+sqlalchemy
+pymysql
+cryptography
+
+# Security & Authentication
+passlib[bcrypt]
+pyjwt
+python-multipart
+
+# Document Processing & Vector Search (RAG)
+pypdf
+sentence-transformers
+faiss-cpu
+
+# LLM / AI Integration
+google-generativeai
+
+# Frontend & HTTP Client
+streamlit
+requests
+
+psycopg2-binary
