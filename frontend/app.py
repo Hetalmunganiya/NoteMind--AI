@@ -13,7 +13,7 @@ import requests
 import extra_streamlit_components as stx
 
 # Backend API Base URL
-API_URL = "http://localhost:8000"
+API_URL = "https://notemind-backend-7vl9.onrender.com"
 
 # ---------------------------------------------------------------------
 # 1. Page Configuration & Session State Initialization
