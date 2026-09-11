@@ -14,7 +14,7 @@ load_dotenv()
 
 class Settings:
     # -----------------------------
-    # Database Configuration (MySQL)
+    # Database Configuration
     # -----------------------------
     DB_USER: str = os.getenv("DB_USER", "root")
     DB_PASSWORD: str = os.getenv("DB_PASSWORD", "password")
@@ -22,8 +22,9 @@ class Settings:
     DB_PORT: str = os.getenv("DB_PORT", "3306")
     DB_NAME: str = os.getenv("DB_NAME", "notemind_db")
 
-    # SQLAlchemy connection string (using pymysql driver)
-    DATABASE_URL: str = (
+    # Render ka DATABASE_URL pehle read karein, agar na mile tab MySQL fallback lein
+    DATABASE_URL: str = os.getenv(
+        "DATABASE_URL",
         f"mysql+pymysql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
     )
 
@@ -49,7 +50,7 @@ class Settings:
     CHUNK_SIZE: int = 500
     CHUNK_OVERLAP: int = 100
     TOP_K: int = 5
-    EMBEDDING_MODEL_NAME: str = "all-MiniLM-L6-v2"
+    EMBEDDING_MODEL_NAME: str = "models/text-embedding-004"
 
 
 # Create a single reusable instance
