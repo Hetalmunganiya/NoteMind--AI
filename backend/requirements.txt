@@ -23,7 +23,7 @@ pypdf
 faiss-cpu
 
 # LLM / AI Integration
-google-generativeai
+google-generativeai>=0.8.3
 
 # Frontend & HTTP Client
 streamlit
