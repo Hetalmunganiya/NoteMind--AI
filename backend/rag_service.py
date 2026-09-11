@@ -1,9 +1,9 @@
 """
 backend/rag_service.py
 -----------------------
-RAG (Retrieval-Augmented Generation) and AI services for NoteMind AI.
-Handles PDF extraction, chunking, Gemini cloud embeddings,
-FAISS vector search, and Google Gemini API prompts.
+RAG and AI services for NoteMind AI.
+Uses TF-IDF + FAISS for fast, reliable local search (no embedding API errors),
+and Gemini 1.5-Flash for generative AI answers and study tools.
 """
 
 import io
@@ -13,27 +13,22 @@ from typing import List, Tuple, Dict, Any
 import numpy as np
 import faiss
 from pypdf import PdfReader
+from sklearn.feature_extraction.text import TfidfVectorizer
 import google.generativeai as genai
 
 from config import settings
-
-# ---------------------------------------------------------------------
-# Initialization: Gemini API
-# ---------------------------------------------------------------------
 
 if settings.GEMINI_API_KEY:
     genai.configure(api_key=settings.GEMINI_API_KEY)
 
 GEMINI_MODEL_NAME = "gemini-1.5-flash"
-EMBEDDING_MODEL = "text-embedding-004"
 
+# Global vectorizer store for search matching
+vectorizer = TfidfVectorizer(max_features=768, stop_words="english")
 
-# ---------------------------------------------------------------------
-# Helper: Call Gemini Generative Model safely
-# ---------------------------------------------------------------------
 
 def _call_gemini(prompt: str) -> str:
-    """Helper function to query Gemini API with error handling."""
+    """Helper function to query Gemini API safely."""
     if not settings.GEMINI_API_KEY:
         return "Gemini API key is not configured. Please set GEMINI_API_KEY in .env."
     try:
@@ -44,36 +39,18 @@ def _call_gemini(prompt: str) -> str:
         return f"Error communicating with Gemini AI: {str(e)}"
 
 
-def _get_gemini_embedding(text: str) -> np.ndarray:
-    """Generate a single text embedding using Gemini API (0 MB local RAM)."""
-    result = genai.embed_content(
-        model=EMBEDDING_MODEL,
-        content=text,
-        task_type="retrieval_document"
-    )
-    return np.array(result["embedding"], dtype=np.float32)
-
-
-# ---------------------------------------------------------------------
-# 1. PDF Processing & Vector Indexing
-# ---------------------------------------------------------------------
-
 def extract_text_from_pdf(file_bytes: bytes) -> str:
-    """Extract raw text from PDF file bytes."""
     pdf_file = io.BytesIO(file_bytes)
     reader = PdfReader(pdf_file)
     extracted_text = []
-
     for page in reader.pages:
         page_text = page.extract_text()
         if page_text:
             extracted_text.append(page_text)
-
     return "\n".join(extracted_text)
 
 
 def create_chunks(text: str, chunk_size: int = 500, overlap: int = 100) -> List[str]:
-    """Split text into overlapping chunks of characters."""
     cleaned_text = re.sub(r"\s+", " ", text).strip()
     chunks = []
     start = 0
@@ -92,9 +69,6 @@ def create_chunks(text: str, chunk_size: int = 500, overlap: int = 100) -> List[
 
 
 def process_pdf(file_bytes: bytes) -> Tuple[List[str], faiss.IndexFlatL2, str]:
-    """
-    Extract text, chunk, embed with Gemini API, and create FAISS index.
-    """
     full_text = extract_text_from_pdf(file_bytes)
     if not full_text.strip():
         raise ValueError("The uploaded PDF does not contain extractable text.")
@@ -105,37 +79,27 @@ def process_pdf(file_bytes: bytes) -> Tuple[List[str], faiss.IndexFlatL2, str]:
         overlap=settings.CHUNK_OVERLAP,
     )
 
-    # Cloud embeddings via Gemini
-    embeddings_list = []
-    for chunk in chunks:
-        embeddings_list.append(_get_gemini_embedding(chunk))
+    # Fast local TF-IDF vectorization (No Google API dependency for embeddings)
+    tfidf_matrix = vectorizer.fit_transform(chunks).toarray().astype(np.float32)
+    
+    # Normalize vectors for cosine similarity search
+    faiss.normalize_L2(tfidf_matrix)
 
-    chunk_embeddings = np.array(embeddings_list, dtype=np.float32)
-
-    dimension = chunk_embeddings.shape[1]
-    index = faiss.IndexFlatL2(dimension)
-    index.add(chunk_embeddings)
+    dimension = tfidf_matrix.shape[1]
+    index = faiss.IndexFlatIP(dimension)
+    index.add(tfidf_matrix)
 
     return chunks, index, full_text
 
 
-# ---------------------------------------------------------------------
-# 2. Vector Search and QA (Ask Question)
-# ---------------------------------------------------------------------
-
 def ask_question(
-    question: str, index: faiss.IndexFlatL2, chunks: List[str], top_k: int = 5
+    question: str, index: faiss.IndexFlatIP, chunks: List[str], top_k: int = 5
 ) -> Tuple[str, List[str]]:
-    """Retrieve top_k chunks using FAISS and answer via Gemini."""
-    query_res = genai.embed_content(
-        model=EMBEDDING_MODEL,
-        content=question,
-        task_type="retrieval_query"
-    )
-    query_embedding = np.array([query_res["embedding"]], dtype=np.float32)
+    query_vec = vectorizer.transform([question]).toarray().astype(np.float32)
+    faiss.normalize_L2(query_vec)
 
     actual_k = min(top_k, len(chunks))
-    distances, indices = index.search(query_embedding, actual_k)
+    distances, indices = index.search(query_vec, actual_k)
 
     retrieved_chunks = [chunks[idx] for idx in indices[0] if idx < len(chunks)]
     context = "\n---\n".join(retrieved_chunks)
@@ -156,10 +120,6 @@ Answer:"""
     return answer, retrieved_chunks
 
 
-# ---------------------------------------------------------------------
-# 3. Generate Study Notes
-# ---------------------------------------------------------------------
-
 def generate_study_notes(full_text: str) -> str:
     sample_text = full_text[:15000]
     prompt = f"""You are an expert tutor. Create clear, comprehensive, and well-organized study notes based on the following text.
@@ -169,13 +129,8 @@ Document Content:
 {sample_text}
 
 Structured Study Notes:"""
-
     return _call_gemini(prompt)
 
-
-# ---------------------------------------------------------------------
-# 4. Generate Summary & Key Points
-# ---------------------------------------------------------------------
 
 def generate_summary_and_keypoints(full_text: str) -> Tuple[str, List[str]]:
     sample_text = full_text[:15000]
@@ -210,10 +165,6 @@ Document Content:
         return raw_response, []
 
 
-# ---------------------------------------------------------------------
-# 5. Explain Like I'm 5 (ELI5)
-# ---------------------------------------------------------------------
-
 def generate_eli5(concept_or_text: str) -> str:
     prompt = f"""Explain the following concept or text like I am 5 years old (ELI5).
 Use simple words, intuitive real-world analogies, and keep it fun and engaging.
@@ -222,13 +173,8 @@ Topic / Content:
 {concept_or_text}
 
 ELI5 Explanation:"""
-
     return _call_gemini(prompt)
 
-
-# ---------------------------------------------------------------------
-# 6. Generate Multiple Choice Quiz (MCQs)
-# ---------------------------------------------------------------------
 
 def generate_mcq_quiz(full_text: str, num_questions: int = 5) -> List[Dict[str, Any]]:
     sample_text = full_text[:15000]

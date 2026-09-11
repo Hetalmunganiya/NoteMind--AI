@@ -32,3 +32,4 @@ requests
 psycopg2-binary
 email-validator
 extra-streamlit-components
+scikit-learn
