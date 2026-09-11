@@ -30,13 +30,17 @@ security_scheme = HTTPBearer()
 # =====================================================================
 
 def hash_password(password: str) -> str:
-    """Hash a plain text password using bcrypt."""
-    return pwd_context.hash(password)
+    """Hash a plain text password using bcrypt with 72-byte truncation fix."""
+    pwd_bytes = password.encode("utf-8")[:72]
+    safe_password = pwd_bytes.decode("utf-8", errors="ignore")
+    return pwd_context.hash(safe_password)
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """Verify a plain password against its bcrypt hashed version."""
-    return pwd_context.verify(plain_password, hashed_password)
+    """Verify a plain password against its bcrypt hashed version with 72-byte truncation fix."""
+    pwd_bytes = plain_password.encode("utf-8")[:72]
+    safe_password = pwd_bytes.decode("utf-8", errors="ignore")
+    return pwd_context.verify(safe_password, hashed_password)
 
 
 # =====================================================================
