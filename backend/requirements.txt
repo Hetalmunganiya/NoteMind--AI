@@ -19,7 +19,6 @@ python-multipart
 
 # Document Processing & Vector Search (RAG)
 pypdf
-sentence-transformers
 faiss-cpu
 
 # LLM / AI Integration

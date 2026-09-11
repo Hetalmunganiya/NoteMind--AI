@@ -2,7 +2,7 @@
 backend/rag_service.py
 -----------------------
 RAG (Retrieval-Augmented Generation) and AI services for NoteMind AI.
-Handles PDF extraction, chunking, SentenceTransformer embeddings,
+Handles PDF extraction, chunking, Gemini cloud embeddings,
 FAISS vector search, and Google Gemini API prompts.
 """
 
@@ -13,23 +13,19 @@ from typing import List, Tuple, Dict, Any
 import numpy as np
 import faiss
 from pypdf import PdfReader
-from sentence_transformers import SentenceTransformer
 import google.generativeai as genai
 
 from config import settings
 
 # ---------------------------------------------------------------------
-# Initialization: Gemini API & Embedding Model
+# Initialization: Gemini API
 # ---------------------------------------------------------------------
 
 if settings.GEMINI_API_KEY:
     genai.configure(api_key=settings.GEMINI_API_KEY)
 
-# Use standard flash model for high quota limits and fast response
-GEMINI_MODEL_NAME = "gemini-3.6-flash"
-
-# Load SentenceTransformer model for embedding generation
-embedding_model = SentenceTransformer(settings.EMBEDDING_MODEL_NAME)
+GEMINI_MODEL_NAME = "gemini-1.5-flash"
+EMBEDDING_MODEL = "models/text-embedding-004"
 
 
 # ---------------------------------------------------------------------
@@ -48,6 +44,16 @@ def _call_gemini(prompt: str) -> str:
         return f"Error communicating with Gemini AI: {str(e)}"
 
 
+def _get_gemini_embedding(text: str) -> np.ndarray:
+    """Generate a single text embedding using Gemini API (0 MB local RAM)."""
+    result = genai.embed_content(
+        model=EMBEDDING_MODEL,
+        content=text,
+        task_type="retrieval_document"
+    )
+    return np.array(result["embedding"], dtype=np.float32)
+
+
 # ---------------------------------------------------------------------
 # 1. PDF Processing & Vector Indexing
 # ---------------------------------------------------------------------
@@ -58,7 +64,7 @@ def extract_text_from_pdf(file_bytes: bytes) -> str:
     reader = PdfReader(pdf_file)
     extracted_text = []
 
-    for page_num, page in enumerate(reader.pages):
+    for page in reader.pages:
         page_text = page.extract_text()
         if page_text:
             extracted_text.append(page_text)
@@ -67,10 +73,7 @@ def extract_text_from_pdf(file_bytes: bytes) -> str:
 
 
 def create_chunks(text: str, chunk_size: int = 500, overlap: int = 100) -> List[str]:
-    """
-    Split text into overlapping chunks of characters.
-    Chunk size: 500, Overlap: 100.
-    """
+    """Split text into overlapping chunks of characters."""
     cleaned_text = re.sub(r"\s+", " ", text).strip()
     chunks = []
     start = 0
@@ -90,11 +93,7 @@ def create_chunks(text: str, chunk_size: int = 500, overlap: int = 100) -> List[
 
 def process_pdf(file_bytes: bytes) -> Tuple[List[str], faiss.IndexFlatL2, str]:
     """
-    Full pipeline:
-    1. Extract text from PDF.
-    2. Split into chunks.
-    3. Generate embeddings and create FAISS IndexFlatL2 index.
-    Returns (chunks, faiss_index, full_text).
+    Extract text, chunk, embed with Gemini API, and create FAISS index.
     """
     full_text = extract_text_from_pdf(file_bytes)
     if not full_text.strip():
@@ -106,11 +105,13 @@ def process_pdf(file_bytes: bytes) -> Tuple[List[str], faiss.IndexFlatL2, str]:
         overlap=settings.CHUNK_OVERLAP,
     )
 
-    # Generate embeddings for all chunks
-    chunk_embeddings = embedding_model.encode(chunks, convert_to_numpy=True)
-    chunk_embeddings = np.array(chunk_embeddings, dtype=np.float32)
+    # Cloud embeddings via Gemini
+    embeddings_list = []
+    for chunk in chunks:
+        embeddings_list.append(_get_gemini_embedding(chunk))
 
-    # Build FAISS IndexFlatL2
+    chunk_embeddings = np.array(embeddings_list, dtype=np.float32)
+
     dimension = chunk_embeddings.shape[1]
     index = faiss.IndexFlatL2(dimension)
     index.add(chunk_embeddings)
@@ -125,11 +126,13 @@ def process_pdf(file_bytes: bytes) -> Tuple[List[str], faiss.IndexFlatL2, str]:
 def ask_question(
     question: str, index: faiss.IndexFlatL2, chunks: List[str], top_k: int = 5
 ) -> Tuple[str, List[str]]:
-    """
-    Retrieve top_k chunks using FAISS and ask Gemini to answer based on context.
-    """
-    query_embedding = embedding_model.encode([question], convert_to_numpy=True)
-    query_embedding = np.array(query_embedding, dtype=np.float32)
+    """Retrieve top_k chunks using FAISS and answer via Gemini."""
+    query_res = genai.embed_content(
+        model=EMBEDDING_MODEL,
+        content=question,
+        task_type="retrieval_query"
+    )
+    query_embedding = np.array([query_res["embedding"]], dtype=np.float32)
 
     actual_k = min(top_k, len(chunks))
     distances, indices = index.search(query_embedding, actual_k)
@@ -158,9 +161,7 @@ Answer:"""
 # ---------------------------------------------------------------------
 
 def generate_study_notes(full_text: str) -> str:
-    """Generate comprehensive, well-structured revision notes from the document text."""
     sample_text = full_text[:15000]
-
     prompt = f"""You are an expert tutor. Create clear, comprehensive, and well-organized study notes based on the following text.
 Use Markdown formatting with main headings, sub-headings, bullet points, and highlight important definitions.
 
@@ -177,9 +178,7 @@ Structured Study Notes:"""
 # ---------------------------------------------------------------------
 
 def generate_summary_and_keypoints(full_text: str) -> Tuple[str, List[str]]:
-    """Generate a concise summary and a list of key takeaway bullet points."""
     sample_text = full_text[:15000]
-
     prompt = f"""Summarize the following study document.
 Respond ONLY in this exact JSON format:
 {{
@@ -197,7 +196,6 @@ Document Content:
 {sample_text}"""
 
     raw_response = _call_gemini(prompt)
-
     try:
         clean_json = raw_response.strip()
         clean_json = re.sub(r"^```json\s*", "", clean_json, flags=re.MULTILINE)
@@ -217,7 +215,6 @@ Document Content:
 # ---------------------------------------------------------------------
 
 def generate_eli5(concept_or_text: str) -> str:
-    """Simplify a complex topic or passage using easy-to-understand metaphors and plain language."""
     prompt = f"""Explain the following concept or text like I am 5 years old (ELI5).
 Use simple words, intuitive real-world analogies, and keep it fun and engaging.
 
@@ -234,9 +231,7 @@ ELI5 Explanation:"""
 # ---------------------------------------------------------------------
 
 def generate_mcq_quiz(full_text: str, num_questions: int = 5) -> List[Dict[str, Any]]:
-    """Generate multiple-choice quiz questions based on the document."""
     sample_text = full_text[:15000]
-
     prompt = f"""Generate {num_questions} multiple-choice quiz questions (MCQs) based on the text below to test student comprehension.
 Each question must have 4 distinct options and a clear correct answer.
 
@@ -254,17 +249,14 @@ Document Content:
 {sample_text}"""
 
     raw_response = _call_gemini(prompt)
-
     try:
         clean_json = raw_response.strip()
-        # Robust regex cleaning for markdown backticks
         clean_json = re.sub(r"^```json\s*", "", clean_json, flags=re.MULTILINE)
         clean_json = re.sub(r"^```\s*", "", clean_json, flags=re.MULTILINE)
         clean_json = re.sub(r"```$", "", clean_json, flags=re.MULTILINE).strip()
 
         quiz_data = json.loads(clean_json)
         if isinstance(quiz_data, list):
-            # Normalize keys so both "answer" and "correct_answer" work
             for q in quiz_data:
                 if "correct_answer" in q and "answer" not in q:
                     q["answer"] = q["correct_answer"]
