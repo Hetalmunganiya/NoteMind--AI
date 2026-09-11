@@ -26,11 +26,10 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# Hide Streamlit settings menu, header, footer, deploy button, badges, and watermark
+# Custom CSS: Header ko chhupa bina sidebar toggle button ko hamesha visible rakhna
 st.markdown("""
     <style>
     #MainMenu {visibility: hidden;}
-    header {visibility: hidden;}
     footer {visibility: hidden;}
     .stDeployButton {display:none;}
     [data-testid="stStatusWidget"] {visibility: hidden;}
@@ -39,6 +38,23 @@ st.markdown("""
     div[class*="viewerBadge"] {display: none !important;}
     div[class*="profile"] {display: none !important;}
     #manage-app-button {display: none !important;}
+
+    /* Sidebar toggle button (>>) hamesha visible aur styled rahega */
+    [data-testid="collapsedControl"] {
+        display: flex !important;
+        visibility: visible !important;
+        z-index: 999999 !important;
+        top: 0.75rem !important;
+        left: 0.75rem !important;
+        background-color: #1e293b !important;
+        border-radius: 8px !important;
+        border: 1px solid #334155 !important;
+        color: #38bdf8 !important;
+    }
+    [data-testid="collapsedControl"] svg {
+        fill: #38bdf8 !important;
+        stroke: #38bdf8 !important;
+    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -60,24 +76,21 @@ if "quiz_data" not in st.session_state:
     st.session_state.quiz_data = []
 if "quiz_submitted" not in st.session_state:
     st.session_state.quiz_submitted = False
-if "just_logged_out" not in st.session_state:
-    st.session_state.just_logged_out = False
 
-# Auto-restore session from cookies on refresh (only if user didn't just logout)
-if not st.session_state.just_logged_out:
-    cookies = cookie_manager.get_all()
-    if not st.session_state.token and cookies:
-        saved_token = cookies.get("notemind_token")
-        if saved_token and str(saved_token).strip():
-            st.session_state.token = saved_token
-            st.session_state.user_email = cookies.get("notemind_email")
-            if "notemind_session_id" in cookies:
-                st.session_state.session_id = cookies.get("notemind_session_id")
-            if "notemind_filename" in cookies:
-                st.session_state.uploaded_filename = cookies.get("notemind_filename")
-            st.rerun()
-else:
-    st.session_state.just_logged_out = False
+# Auto-restore session from cookies on refresh
+if not st.session_state.token:
+    token_cookie = cookie_manager.get(cookie="notemind_token")
+    email_cookie = cookie_manager.get(cookie="notemind_email")
+    sid_cookie = cookie_manager.get(cookie="notemind_session_id")
+    fn_cookie = cookie_manager.get(cookie="notemind_filename")
+
+    if token_cookie and str(token_cookie).strip():
+        st.session_state.token = str(token_cookie).strip()
+        st.session_state.user_email = str(email_cookie).strip() if email_cookie else ""
+        if sid_cookie:
+            st.session_state.session_id = sid_cookie
+        if fn_cookie:
+            st.session_state.uploaded_filename = fn_cookie
 
 
 def get_auth_headers():
@@ -97,7 +110,6 @@ with st.sidebar:
     st.markdown("---")
 
     if not st.session_state.token:
-        # Show Login / Register forms when not logged in
         auth_mode = st.radio("Account Access", ["Login", "Register"], horizontal=True)
 
         if auth_mode == "Login":
@@ -114,21 +126,21 @@ with st.sidebar:
                             res = requests.post(
                                 f"{clean_url}/api/login",
                                 json={"email": email, "password": password},
-                                headers={"Content-Type": "application/json"}
+                                headers={"Content-Type": "application/json"},
                             )
                             if res.status_code == 200:
                                 data = res.json()
-                                st.session_state.token = data["access_token"]
+                                access_token = data["access_token"]
+                                st.session_state.token = access_token
                                 st.session_state.user_email = email
-                                st.session_state.just_logged_out = False
 
                                 # Save in cookies with 7-day expiration
                                 expire_time = datetime.now() + timedelta(days=7)
-                                cookie_manager.set("notemind_token", data["access_token"], expires_at=expire_time, key="set_tok")
+                                cookie_manager.set("notemind_token", access_token, expires_at=expire_time, key="set_tok")
                                 cookie_manager.set("notemind_email", email, expires_at=expire_time, key="set_em")
-                                time.sleep(0.3)
 
                                 st.success("Logged in successfully!")
+                                time.sleep(0.5)
                                 st.rerun()
                             else:
                                 try:
@@ -155,7 +167,7 @@ with st.sidebar:
                             res = requests.post(
                                 f"{clean_url}/api/register",
                                 json={"email": reg_email, "password": reg_password},
-                                headers={"Content-Type": "application/json"}
+                                headers={"Content-Type": "application/json"},
                             )
                             if res.status_code in [200, 201]:
                                 st.success("Account created! Please switch to Login tab to sign in.")
@@ -171,11 +183,14 @@ with st.sidebar:
                         st.warning("Please fill in all fields.")
 
     else:
-        # User is authenticated
         st.success(f"👤 Logged in as:\n**{st.session_state.user_email}**")
 
         if st.button("🚪 Logout", use_container_width=True):
-            st.session_state.just_logged_out = True
+            cookie_manager.delete("notemind_token", key="del_tok")
+            cookie_manager.delete("notemind_email", key="del_em")
+            cookie_manager.delete("notemind_session_id", key="del_sid")
+            cookie_manager.delete("notemind_filename", key="del_fn")
+
             st.session_state.token = None
             st.session_state.user_email = None
             st.session_state.session_id = None
@@ -184,14 +199,7 @@ with st.sidebar:
             st.session_state.quiz_data = []
             st.session_state.quiz_submitted = False
 
-            # Safe cookie expiration without crashing on KeyError
-            past_time = datetime.now() - timedelta(days=1)
-            cookie_manager.set("notemind_token", "", expires_at=past_time, key="clr_tok")
-            cookie_manager.set("notemind_email", "", expires_at=past_time, key="clr_em")
-            cookie_manager.set("notemind_session_id", "", expires_at=past_time, key="clr_sid")
-            cookie_manager.set("notemind_filename", "", expires_at=past_time, key="clr_fn")
-
-            time.sleep(0.3)
+            time.sleep(0.5)
             st.rerun()
 
         st.markdown("---")
@@ -220,7 +228,6 @@ if navigation == "📖 Study Room":
     st.header("📖 Study Room")
     st.write("Upload course slides, textbooks, or research papers to unlock AI study tools.")
 
-    # PDF Uploader Section
     col_upload, col_status = st.columns([2, 1])
 
     with col_upload:
@@ -250,11 +257,9 @@ if navigation == "📖 Study Room":
                         st.session_state.quiz_data = []
                         st.session_state.quiz_submitted = False
 
-                        # Persist active document to cookies
                         expire_time = datetime.now() + timedelta(days=7)
                         cookie_manager.set("notemind_session_id", str(data["session_id"]), expires_at=expire_time, key="set_sid")
                         cookie_manager.set("notemind_filename", data["filename"], expires_at=expire_time, key="set_fn")
-                        time.sleep(0.2)
 
                         st.success(f"✅ **{data['filename']}** processed successfully!")
                     else:
@@ -265,7 +270,6 @@ if navigation == "📖 Study Room":
     if st.session_state.session_id:
         st.info(f"📄 Active Document: **{st.session_state.uploaded_filename}**")
 
-        # Sub-tabs for Study Features
         tab_notes, tab_chat, tab_quiz = st.tabs(
             ["📝 Notes & Summary", "💬 Chat with PDF", "🎯 Practice Quiz"]
         )
@@ -310,7 +314,6 @@ if navigation == "📖 Study Room":
                         except Exception as e:
                             st.error(f"Request failed: {e}")
 
-            # Visual separation based on selected button view
             view_mode = st.session_state.get("notes_view_mode")
 
             if view_mode == "comprehensive" and "last_comprehensive_notes" in st.session_state:
@@ -344,12 +347,10 @@ if navigation == "📖 Study Room":
         with tab_chat:
             st.subheader("Ask Questions About Your Document")
 
-            # Render Chat History
             for message in st.session_state.chat_history:
                 with st.chat_message(message["role"]):
                     st.markdown(message["content"])
 
-            # User Question Input
             user_query = st.chat_input("Ask a question about this document...")
             if user_query:
                 st.session_state.chat_history.append({"role": "user", "content": user_query})
@@ -403,7 +404,6 @@ if navigation == "📖 Study Room":
                     options = q.get("options", [])
                     st.radio("Options", options, key=f"q_{idx}", label_visibility="collapsed")
 
-                    # Submitted state feedback
                     if st.session_state.quiz_submitted:
                         user_ans = st.session_state.get(f"q_{idx}")
                         correct_ans = q.get("answer") or q.get("correct_answer") or q.get("correctAnswer")
@@ -449,7 +449,6 @@ elif navigation == "📂 My Saved Notes":
                         st.markdown(note.get("notes", "No notes content."))
                         
                         st.markdown("---")
-                        # Delete button
                         if st.button("🗑️ Delete Note", key=f"del_note_{note_id}"):
                             del_res = requests.delete(f"{API_URL.rstrip('/')}/api/notes/{note_id}", headers=get_auth_headers())
                             if del_res.status_code == 200:
