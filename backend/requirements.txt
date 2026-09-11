@@ -30,3 +30,4 @@ streamlit
 requests
 
 psycopg2-binary
+email-validator
