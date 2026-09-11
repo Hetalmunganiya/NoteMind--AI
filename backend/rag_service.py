@@ -21,7 +21,7 @@ from config import settings
 if settings.GEMINI_API_KEY:
     genai.configure(api_key=settings.GEMINI_API_KEY)
 
-GEMINI_MODEL_NAME = "gemini-1.5-flash"
+GEMINI_MODEL_NAME = "gemini-3.6-flash"
 
 # Global vectorizer store for search matching
 vectorizer = TfidfVectorizer(max_features=768, stop_words="english")
