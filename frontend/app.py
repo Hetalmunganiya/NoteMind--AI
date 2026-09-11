@@ -26,7 +26,7 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# Custom CSS: Header ko chhupa bina sidebar toggle button ko hamesha visible rakhna
+# Custom CSS: Header hide kare bina sidebar toggle button ko hamesha visible aur clickable rakhna
 st.markdown("""
     <style>
     #MainMenu {visibility: hidden;}
@@ -39,7 +39,7 @@ st.markdown("""
     div[class*="profile"] {display: none !important;}
     #manage-app-button {display: none !important;}
 
-    /* Sidebar toggle button (>>) hamesha visible aur styled rahega */
+    /* Sidebar toggle button (>>) hamesha visible aur clickable rahega */
     [data-testid="collapsedControl"] {
         display: flex !important;
         visibility: visible !important;
@@ -78,19 +78,16 @@ if "quiz_submitted" not in st.session_state:
     st.session_state.quiz_submitted = False
 
 # Auto-restore session from cookies on refresh
-if not st.session_state.token:
-    token_cookie = cookie_manager.get(cookie="notemind_token")
-    email_cookie = cookie_manager.get(cookie="notemind_email")
-    sid_cookie = cookie_manager.get(cookie="notemind_session_id")
-    fn_cookie = cookie_manager.get(cookie="notemind_filename")
+all_cookies = cookie_manager.get_all()
 
-    if token_cookie and str(token_cookie).strip():
-        st.session_state.token = str(token_cookie).strip()
-        st.session_state.user_email = str(email_cookie).strip() if email_cookie else ""
-        if sid_cookie:
-            st.session_state.session_id = sid_cookie
-        if fn_cookie:
-            st.session_state.uploaded_filename = fn_cookie
+if not st.session_state.token and all_cookies:
+    saved_tok = all_cookies.get("notemind_token")
+    if saved_tok and str(saved_tok).strip() and saved_tok != "None":
+        st.session_state.token = str(saved_tok).strip()
+        st.session_state.user_email = all_cookies.get("notemind_email", "")
+        st.session_state.session_id = all_cookies.get("notemind_session_id")
+        st.session_state.uploaded_filename = all_cookies.get("notemind_filename")
+        st.rerun()
 
 
 def get_auth_headers():
@@ -191,14 +188,7 @@ with st.sidebar:
             cookie_manager.delete("notemind_session_id", key="del_sid")
             cookie_manager.delete("notemind_filename", key="del_fn")
 
-            st.session_state.token = None
-            st.session_state.user_email = None
-            st.session_state.session_id = None
-            st.session_state.uploaded_filename = None
-            st.session_state.chat_history = []
-            st.session_state.quiz_data = []
-            st.session_state.quiz_submitted = False
-
+            st.session_state.clear()
             time.sleep(0.5)
             st.rerun()
 
