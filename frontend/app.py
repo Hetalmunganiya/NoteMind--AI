@@ -26,13 +26,19 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# Hide Streamlit settings menu, header, footer, and deploy button
+# Hide Streamlit settings menu, header, footer, deploy button, badges, and watermark
 st.markdown("""
     <style>
     #MainMenu {visibility: hidden;}
     header {visibility: hidden;}
     footer {visibility: hidden;}
     .stDeployButton {display:none;}
+    [data-testid="stStatusWidget"] {visibility: hidden;}
+    .viewerBadge_container__1QSob {display: none !important;}
+    .viewerBadge_link__1SuGQ {display: none !important;}
+    div[class*="viewerBadge"] {display: none !important;}
+    div[class*="profile"] {display: none !important;}
+    #manage-app-button {display: none !important;}
     </style>
 """, unsafe_allow_html=True)
 
@@ -104,9 +110,11 @@ with st.sidebar:
                 if login_btn:
                     if email and password:
                         try:
+                            clean_url = API_URL.rstrip("/")
                             res = requests.post(
-                                f"{API_URL}/api/login",
+                                f"{clean_url}/api/login",
                                 json={"email": email, "password": password},
+                                headers={"Content-Type": "application/json"}
                             )
                             if res.status_code == 200:
                                 data = res.json()
@@ -123,7 +131,11 @@ with st.sidebar:
                                 st.success("Logged in successfully!")
                                 st.rerun()
                             else:
-                                st.error(res.json().get("detail", "Login failed."))
+                                try:
+                                    err_detail = res.json().get("detail", res.text)
+                                except Exception:
+                                    err_detail = res.text
+                                st.error(f"Login failed ({res.status_code}): {err_detail}")
                         except Exception as e:
                             st.error(f"Cannot connect to backend: {e}")
                     else:
@@ -139,16 +151,22 @@ with st.sidebar:
                 if reg_btn:
                     if reg_email and reg_password:
                         try:
+                            clean_url = API_URL.rstrip("/")
                             res = requests.post(
-                                f"{API_URL}/api/register",
+                                f"{clean_url}/api/register",
                                 json={"email": reg_email, "password": reg_password},
+                                headers={"Content-Type": "application/json"}
                             )
-                            if res.status_code == 201:
-                                st.success("Account created! Please log in.")
+                            if res.status_code in [200, 201]:
+                                st.success("Account created! Please switch to Login tab to sign in.")
                             else:
-                                st.error(res.json().get("detail", "Registration failed."))
+                                try:
+                                    err_detail = res.json().get("detail", res.text)
+                                except Exception:
+                                    err_detail = res.text
+                                st.error(f"Backend returned ({res.status_code}): {err_detail}")
                         except Exception as e:
-                            st.error(f"Cannot connect to backend: {e}")
+                            st.error(f"Network error connecting to backend: {e}")
                     else:
                         st.warning("Please fill in all fields.")
 
@@ -220,7 +238,7 @@ if navigation == "📖 Study Room":
                 try:
                     files = {"file": (uploaded_pdf.name, uploaded_pdf.getvalue(), "application/pdf")}
                     res = requests.post(
-                        f"{API_URL}/api/upload-pdf",
+                        f"{API_URL.rstrip('/')}/api/upload-pdf",
                         headers=get_auth_headers(),
                         files=files,
                     )
@@ -262,7 +280,7 @@ if navigation == "📖 Study Room":
                     with st.spinner("Generating structured study notes..."):
                         try:
                             res = requests.post(
-                                f"{API_URL}/api/generate-notes",
+                                f"{API_URL.rstrip('/')}/api/generate-notes",
                                 headers=get_auth_headers(),
                                 json={"session_id": st.session_state.session_id},
                             )
@@ -280,7 +298,7 @@ if navigation == "📖 Study Room":
                     with st.spinner("Generating quick summary..."):
                         try:
                             res = requests.post(
-                                f"{API_URL}/api/summary",
+                                f"{API_URL.rstrip('/')}/api/summary",
                                 headers=get_auth_headers(),
                                 json={"session_id": st.session_state.session_id},
                             )
@@ -342,7 +360,7 @@ if navigation == "📖 Study Room":
                     with st.spinner("Searching document & generating answer..."):
                         try:
                             res = requests.post(
-                                f"{API_URL}/api/chat",
+                                f"{API_URL.rstrip('/')}/api/chat",
                                 headers=get_auth_headers(),
                                 json={
                                     "question": user_query,
@@ -366,7 +384,7 @@ if navigation == "📖 Study Room":
                 with st.spinner("Generating quiz questions..."):
                     try:
                         res = requests.post(
-                            f"{API_URL}/api/quiz",
+                            f"{API_URL.rstrip('/')}/api/quiz",
                             headers=get_auth_headers(),
                             json={"session_id": st.session_state.session_id},
                         )
@@ -385,10 +403,9 @@ if navigation == "📖 Study Room":
                     options = q.get("options", [])
                     st.radio("Options", options, key=f"q_{idx}", label_visibility="collapsed")
 
-                    # Submitted state me feedback
+                    # Submitted state feedback
                     if st.session_state.quiz_submitted:
                         user_ans = st.session_state.get(f"q_{idx}")
-                        # Fallback for any key returned by AI
                         correct_ans = q.get("answer") or q.get("correct_answer") or q.get("correctAnswer")
                         
                         if user_ans and correct_ans and user_ans.strip() == correct_ans.strip():
@@ -417,7 +434,7 @@ elif navigation == "📂 My Saved Notes":
     st.write("Browse your saved study notes and summaries.")
 
     try:
-        res = requests.get(f"{API_URL}/api/notes", headers=get_auth_headers())
+        res = requests.get(f"{API_URL.rstrip('/')}/api/notes", headers=get_auth_headers())
         if res.status_code == 200:
             saved_notes = res.json()
             if not saved_notes:
@@ -434,7 +451,7 @@ elif navigation == "📂 My Saved Notes":
                         st.markdown("---")
                         # Delete button
                         if st.button("🗑️ Delete Note", key=f"del_note_{note_id}"):
-                            del_res = requests.delete(f"{API_URL}/api/notes/{note_id}", headers=get_auth_headers())
+                            del_res = requests.delete(f"{API_URL.rstrip('/')}/api/notes/{note_id}", headers=get_auth_headers())
                             if del_res.status_code == 200:
                                 st.success("Note deleted!")
                                 st.rerun()
