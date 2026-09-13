@@ -2,27 +2,26 @@
 backend/config.py
 -----------------
 Configuration settings for NoteMind AI.
-Loads environment variables from a .env file and provides default fallbacks.
+Configured for TiDB Cloud (MySQL) and Google Gemini AI.
 """
 
 import os
 from dotenv import load_dotenv
 
-# Load environment variables from .env file (if it exists)
 load_dotenv()
 
 
 class Settings:
     # -----------------------------
-    # Database Configuration
+    # Database Configuration (TiDB / MySQL)
     # -----------------------------
     DB_USER: str = os.getenv("DB_USER", "root")
     DB_PASSWORD: str = os.getenv("DB_PASSWORD", "password")
     DB_HOST: str = os.getenv("DB_HOST", "localhost")
     DB_PORT: str = os.getenv("DB_PORT", "3306")
-    DB_NAME: str = os.getenv("DB_NAME", "notemind_db")
+    DB_NAME: str = os.getenv("DB_NAME", "test")
 
-    # Render ka DATABASE_URL pehle read karein, agar na mile tab MySQL fallback lein
+    # Render Environment Variable DATABASE_URL check
     DATABASE_URL: str = os.getenv(
         "DATABASE_URL",
         f"mysql+pymysql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
@@ -37,7 +36,7 @@ class Settings:
     JWT_ALGORITHM: str = os.getenv("JWT_ALGORITHM", "HS256")
     ACCESS_TOKEN_EXPIRE_MINUTES: int = int(
         os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "1440")
-    )  # Default: 24 hours
+    )
 
     # -----------------------------
     # Google Gemini API
@@ -53,5 +52,4 @@ class Settings:
     EMBEDDING_MODEL_NAME: str = "models/text-embedding-004"
 
 
-# Create a single reusable instance
 settings = Settings()

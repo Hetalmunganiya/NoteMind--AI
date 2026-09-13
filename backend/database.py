@@ -2,7 +2,7 @@
 backend/database.py
 -------------------
 Database connection and session management for NoteMind AI.
-Sets up the SQLAlchemy engine, session maker, and base model class.
+Configured for TiDB Cloud Serverless (MySQL).
 """
 
 from sqlalchemy import create_engine
@@ -12,32 +12,32 @@ from config import settings
 # Database URL fetch karein
 db_url = settings.DATABASE_URL
 
-# Render aur Neon ke postgres:// prefix ko SQLAlchemy-compatible postgresql:// me convert karein
-if db_url.startswith("postgres://"):
-    db_url = db_url.replace("postgres://", "postgresql://", 1)
+# Agar URL 'mysql://' se shuru ho rahi ho toh pymysql driver enforce karein
+if db_url.startswith("mysql://"):
+    db_url = db_url.replace("mysql://", "mysql+pymysql://", 1)
 
-# SQLite ke liye check_same_thread chahiye hota hai, PostgreSQL ke liye nahi
+# SQLite ke liye fallback (agar local testing ho)
 connect_args = {"check_same_thread": False} if "sqlite" in db_url else {}
 
-# Engine create karein
+# Engine create karein with pooling for TiDB Cloud stability
 engine = create_engine(
     db_url,
     connect_args=connect_args,
-    pool_pre_ping=True
+    pool_pre_ping=True,       # Connection alive hai ya nahi verify karega
+    pool_recycle=300,         # Idle drops rokne ke liye har 5 min me connection refresh hoga
+    pool_size=5,
+    max_overflow=10
 )
 
 # Session factory bound to the database engine
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-# Base class for all SQLAlchemy database models to inherit from
+# Base class for SQLAlchemy models
 Base = declarative_base()
 
 
 def get_db():
-    """
-    FastAPI dependency that provides a database session per request.
-    Ensures the session is always closed after the request is finished.
-    """
+    """FastAPI dependency to yield database session per request."""
     db = SessionLocal()
     try:
         yield db
