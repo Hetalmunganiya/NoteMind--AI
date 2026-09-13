@@ -29,7 +29,7 @@ google-generativeai>=0.8.3
 streamlit
 requests
 
-psycopg2-binary
+
 email-validator
 extra-streamlit-components
 scikit-learn
