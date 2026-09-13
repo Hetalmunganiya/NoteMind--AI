@@ -11,7 +11,7 @@ NoteMind AI is a full-stack, beginner-friendly AI study assistant that transform
 - **Database & ORM:** [MySQL](https://www.mysql.com/) with [SQLAlchemy](https://www.sqlalchemy.org/)
 - **Vector Search (RAG):** [FAISS](https://github.com/facebookresearch/faiss) (`IndexFlatL2`, chunk size: 500, overlap: 100, top_k: 5)
 - **Embeddings:** [Sentence Transformers](https://www.sbert.net/) (`all-MiniLM-L6-v2`)
-- **LLM / AI Model:** [Google Gemini API](https://aistudio.google.com/) (`gemini-1.5-flash`)
+- **LLM / AI Model:** [Google Gemini API](https://aistudio.google.com/) (`gemini-3.6-flash`)
 - **Authentication:** JWT (JSON Web Tokens) with `bcrypt` password hashing
 
 ---
