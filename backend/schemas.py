@@ -104,3 +104,6 @@ class QuizQuestion(BaseModel):
 class QuizResponse(BaseModel):
     """Schema for a collection of generated quiz questions."""
     quiz: List[QuizQuestion]
+
+
+    

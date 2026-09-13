@@ -309,3 +309,4 @@ def delete_note(
     db.delete(note)
     db.commit()
     return {"message": f"Note {note_id} deleted successfully."}
+

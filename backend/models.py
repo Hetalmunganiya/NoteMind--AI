@@ -44,3 +44,5 @@ class Note(Base):
 
     # Many-to-one relationship back to the User
     owner = relationship("User", back_populates="notes")
+
+    
